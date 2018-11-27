@@ -1,6 +1,7 @@
 #include "injection.h"
 
 DWORD getProcessID(const char* process);
+void retError(const char* str, DWORD err);
 
 const char szDllFile[] = "C:\\Users\\andandersen\\Desktop\\Dll_test.dll";
 const char szProc[] = "Target Process";
@@ -8,7 +9,6 @@ const char szProc[] = "Target Process";
 int main()
 {
 	DWORD PID = getProcessID(szProc);
-	void retError(const char* str, DWORD err);
 
 	HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, PID);
 	if (!hProc)
