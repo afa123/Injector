@@ -10,7 +10,7 @@ bool ManualMap(HANDLE hProc, const char* szDllFile)
 	BYTE* pTargetBase = nullptr;
 
 	// Check if file exists
-	if (!GetFileAttributesA)
+	if (GetFileAttributesA(szDllFile) == INVALID_FILE_ATTRIBUTES)
 	{
 		printf("Error: File Dosen't exist: %s\n",szDllFile);
 		return false;
@@ -56,5 +56,62 @@ bool ManualMap(HANDLE hProc, const char* szDllFile)
 	pOldNtHeader = reinterpret_cast<IMAGE_NT_HEADERS*>(pSrcData + reinterpret_cast<IMAGE_DOS_HEADER*>(pSrcData)->e_lfanew);
 	pOldFileHeader = &pOldNtHeader->FileHeader;
 	pOldOptionalHeader = &pOldNtHeader->OptionalHeader;
-	// 2/4 10:32
+	
+	// Check if file matches platform
+#ifdef _WIN64
+	if (pOldFileHeader->Machine != IMAGE_FILE_MACHINE_AMD64)
+	{
+		printf("File doesn't match 64bit platform\n");
+		delete[] pSrcData;
+		return;
+	}
+#else
+	if (pOldFileHeader->Machine != IMAGE_FILE_MACHINE_I386)
+	{
+		printf("File doesn't match 32bit platform\n");
+		delete[] pSrcData;
+		return;
+	}
+#endif // _WIN64
+
+	// Try to allocate memory at prefered memory location
+	pTargetBase = reinterpret_cast<BYTE*>(VirtualAllocEx(
+											hProc, 
+											reinterpret_cast<void*>(pOldOptionalHeader->ImageBase), 
+											pOldOptionalHeader->SizeOfImage, 
+											MEM_COMMIT | MEM_RESERVE, 
+											PAGE_EXECUTE_READWRITE));
+	if (!pTargetBase)
+	{	// Failed to allocate memory at prefered location, try to allocate at random location instead
+		pTargetBase = reinterpret_cast<BYTE*>(VirtualAllocEx(
+												hProc,
+												nullptr,
+												pOldOptionalHeader->SizeOfImage,
+												MEM_COMMIT | MEM_RESERVE,
+												PAGE_EXECUTE_READWRITE));
+		if (!pTargetBase)
+		{
+			printf("Failed to allocate memory for file in target process\n");
+			delete[] pSrcData;
+			return false;
+		}
+	}
+	MANUAL_MAPPING_DATA data{ 0 };
+	data.pLoadLibraryA = LoadLibraryA;
+	data.pGetProcAddress = reinterpret_cast<f_GetProcAddress>(GetProcAddress);
+
+	auto* pSectionHeader = IMAGE_FIRST_SECTION(pOldNtHeader);
+	for (UINT i = 0; i != pOldFileHeader->NumberOfSections; ++i, ++pSectionHeader)
+	{
+		if (pSectionHeader->PointerToRawData)
+		{
+			if (!WriteProcessMemory(hProc, pTargetBase + pSectionHeader->VirtualAddress, pSrcData + pSectionHeader->PointerToRawData, pSectionHeader->SizeOfRawData, nullptr))
+			{
+				printf("Couldn't map sections: 0x%X\n", GetLastError());
+				delete[] pSrcData;
+				VirtualFreeEx(hProc, pTargetBase, MEM_RELEASE,); // error here
+				return false;
+			}
+		}
+	}
 }
