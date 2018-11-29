@@ -1,5 +1,6 @@
 #include "injection.h"
 
+void __stdcall shellcode(MANUAL_MAPPING_DATA*);
 
 bool ManualMap(HANDLE hProc, const char* szDllFile)
 {
@@ -109,9 +110,48 @@ bool ManualMap(HANDLE hProc, const char* szDllFile)
 			{
 				printf("Couldn't map sections: 0x%X\n", GetLastError());
 				delete[] pSrcData;
-				VirtualFreeEx(hProc, pTargetBase, MEM_RELEASE,); // error here
+				VirtualFreeEx(hProc, pTargetBase, "SIZE HERE" ,MEM_RELEASE); // error here !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 				return false;
 			}
 		}
 	}
+	delete[] pSrcData;
+}
+void __stdcall shellcode(MANUAL_MAPPING_DATA* pData)
+{
+	// pData is a pointer to our baseAddress openmodule and contain the data we need for relocation etc. 3/4 4:40
+	if (!pData)
+	{
+		return;
+	}
+	BYTE* pBase = reinterpret_cast<BYTE*>(pData);
+	auto* pOpt = &reinterpret_cast<IMAGE_NT_HEADERS*>(pBase + reinterpret_cast<IMAGE_DOS_HEADER*>(pData)->e_lfanew)->OptionalHeader;
+
+	auto _LoadLibrary = pData->pLoadLibraryA;
+	auto _GetProcAddress = pData->pGetProcAddress;
+	auto _DllMain = reinterpret_cast<f_DLL_ENTRY_POINT>(pBase + pOpt->AddressOfEntryPoint);
+
+	// Relocation, if located at preferred image base, then there's no need to relocate
+	BYTE* locationDelta = pBase - pOpt->ImageBase;
+	if (locationDelta)
+	{
+		// Check if it's possible to relocate the image, flag can be specified to disable this during compilation
+		if (pOpt->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].Size == 0)
+		{
+			return;
+		}
+		// First entry of many relocation entries 3/4 10:00
+		auto* pRelocData = reinterpret_cast<IMAGE_BASE_RELOCATION*>(pBase + pOpt->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
+		while (pRelocData->VirtualAddress)
+		{
+			// Find number of entries 3/4 12:00
+			UINT amountOfEntries = (pRelocData->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / 2;
+			WORD* pRelativeInfo = reinterpret_cast<WORD*>(pRelocData + 1);
+			// Actually relocate the image 3/4 14:00
+
+		}
+	}
+
+
+	
 }
