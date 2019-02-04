@@ -138,6 +138,7 @@ bool ManualMap(HANDLE hProc, const char* szDllFile)
 			return false;
 		}
 
+		printf("shellcode is located at: 0x%X\n", pShellcode);
 		p_NtCreateThreadEx(&hThread, THREAD_ALL_ACCESS, nullptr, hProc, reinterpret_cast<LPTHREAD_START_ROUTINE>(pShellcode), pTargetBase, NULL, 0, 0, 0, nullptr);
 		if (hThread == nullptr)
 		{
