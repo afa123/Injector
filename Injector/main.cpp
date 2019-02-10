@@ -1,6 +1,8 @@
 #include <stdio.h> 
 #include <tchar.h>
 #include <strsafe.h>
+#include <future>
+#include <thread>
 #include "injection.h"
 
 // --------------------------Named pipes windows start-------------------------
@@ -8,27 +10,63 @@ bool pipeTest = true;
 #define BUFSIZE 512
 DWORD WINAPI InstanceThread(LPVOID);
 VOID GetAnswerToRequest(LPTSTR, LPTSTR, LPDWORD);
-void startPipeServer();
+int startPipeServer();
 // ---------------------------Named pipes windows end-----------------------
-
+HANDLE getThreadToken();
+HANDLE seDebugGetHandle(DWORD processID);
 DWORD getProcessID(const char* process);
 void retError(const char* str, DWORD err);
 bool SetPrivilege(HANDLE hToken, LPCTSTR privilege, bool bEnablePrivilege);
 
 //const char szDllFile[] = "C:\\Users\\IEUser\\Desktop\\hashGrab.dll";
 //const char szProc[] = "lsass.exe";
-HANDLE getThreadToken();
+bool seDebug = false;
+
 const char szDllFile[] = "C:\\Udvikling\\hashGrab\\hashGrab\\Debug\\hashGrab.dll";
 const char szProc[] = "ac_client.exe";
 
 int main()
 {
+	
+	std::thread pipeThread;
 	if (pipeTest)
 	{
-		std::async(std::launch::async, startPipeServer(), NULL); //waits here so it never get to dll injection. call this function async.
+		//std::async(std::launch::async, startPipeServer); //waits here so it never get to dll injection. call this function async.
+		pipeThread = std::thread(startPipeServer);
 	}
-	
-	DWORD PID = getProcessID(szProc);
+	/*
+	std::cout << "test" << std::endl;
+	DWORD processID = getProcessID(szProc);
+	HANDLE hProc;
+
+	if (seDebug)
+	{
+		hProc = seDebugGetHandle(processID);
+	}
+	else
+	{
+		hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processID);
+		if (!hProc)
+		{
+			retError("OpenProcess", GetLastError());
+		}
+	}
+
+	if (!ManualMap(hProc, szDllFile))
+	{
+		CloseHandle(hProc);
+		printf("Error: ManualMap\n");
+	}
+
+	CloseHandle(hProc);*/
+	//pipeThread.join();
+	system("PAUSE");
+	return 0;
+
+}
+
+HANDLE seDebugGetHandle(DWORD processID)
+{
 	HANDLE hToken = getThreadToken();
 
 	// Enable SeDebug privileges for thread
@@ -39,7 +77,7 @@ int main()
 	}
 
 	printf("Opening handle to %s\n", szProc);
-	HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, PID);
+	HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, processID);
 	if (!hProc)
 	{
 		CloseHandle(hToken);
@@ -54,20 +92,10 @@ int main()
 		retError("Disable SeDebug", GetLastError());
 	}
 	CloseHandle(hToken);
-
-	if (!ManualMap(hProc, szDllFile))
-	{
-		CloseHandle(hProc);
-		printf("Error: ManualMap\n");
-	}
-
-	CloseHandle(hProc);
-	system("PAUSE");
-	return 0;
-
+	return hProc;
 }
 
-void startPipeServer()
+int startPipeServer()
 {
 	// https://docs.microsoft.com/en-us/windows/desktop/ipc/multithreaded-pipe-server
 	BOOL   fConnected = FALSE;
@@ -133,7 +161,7 @@ void startPipeServer()
 			// The client could not connect, so close the pipe. 
 			CloseHandle(hPipe);
 	}
-	//return 0;
+	return 0;
 }
 
 DWORD WINAPI InstanceThread(LPVOID lpvParam)
