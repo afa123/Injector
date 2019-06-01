@@ -70,6 +70,7 @@ bool ManualMap(HANDLE hProc, const char* szDllFile)
 											pOldOptionalHeader->SizeOfImage, 
 											MEM_COMMIT | MEM_RESERVE, 
 											PAGE_EXECUTE_READWRITE));
+	printf("Address of data: 0x%X");
 	if (!pTargetBase)
 	{	// Failed to allocate memory at prefered location, try to allocate at random location instead
 		pTargetBase = reinterpret_cast<BYTE*>(VirtualAllocEx(
@@ -199,24 +200,24 @@ void __stdcall shellcode(MANUAL_MAPPING_DATA* pData)
 		{
 			return;
 		}
-		// First entry of many relocation entries 3/4 10:00
+		// First entry of many relocation entries
 		auto* pRelocData = reinterpret_cast<IMAGE_BASE_RELOCATION*>(pBase + pOpt->DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress);
 		while (pRelocData->VirtualAddress)
 		{
-			// Find number of entries 3/4 12:00
+			// Find number of entries
 			UINT amountOfEntries = (pRelocData->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / 2;
 			WORD* pRelativeInfo = reinterpret_cast<WORD*>(pRelocData + 1);
-			// Actually relocate the image 3/4 14:00
+			// Actually relocate the image 
 			for (UINT i = 0; i != amountOfEntries; ++i, ++pRelativeInfo)
 			{
 				// Check for relocation bit using macro
 				if (RELOC_FLAG(*pRelativeInfo))
 				{
 					UINT_PTR* pPatch = reinterpret_cast<UINT_PTR*>(pBase + pRelocData->VirtualAddress + ((*pRelativeInfo) & 0xFFF));
-					*pPatch += reinterpret_cast<UINT_PTR>(locationDelta); // ERROR HERE!!!!!!!!!!!!!!!!!!
+					*pPatch += reinterpret_cast<UINT_PTR>(locationDelta); 
 				}
 			}
-			// 3/4 19:30
+			
 			pRelocData = reinterpret_cast<IMAGE_BASE_RELOCATION*>(reinterpret_cast<BYTE*>(pRelocData) + pRelocData->SizeOfBlock);
 		}
 	}
@@ -245,25 +246,25 @@ void __stdcall shellcode(MANUAL_MAPPING_DATA* pData)
 				// two ways for functions to be stored which is by name or by ordinal number
 				if (IMAGE_SNAP_BY_ORDINAL(*pThunkRef))
 				{
-					// Get by Ordinal                         Ordinal number is stored at pThunkRef, Take low two bytes to avoid warnings????? 4/4 6:40
+					// Get by Ordinal                         Ordinal number is stored at pThunkRef
 					*pFuncRef = _GetProcAddress(hDll, reinterpret_cast<char*>(*pThunkRef & 0xFFFF));
 				}
 				else
 				{
 					// Grab pointer to the image import by name structure
 					auto* pImport = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(pBase + (*pThunkRef));
-					// Reason for using UINT_PTR 4/4 8:20
+
 					*pFuncRef = _GetProcAddress(hDll, pImport->Name);
 				}
 			}
 			++pImportDescriptor;
 		}
-		// TLS CALLBACKS 4/4 9:10
+		// TLS CALLBACKS
 		if (pOpt->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].Size) // If not 0, we have to do TLS callbacks
 		{
 			auto* pTLS = reinterpret_cast<IMAGE_TLS_DIRECTORY*>(pBase + pOpt->DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress);
 			auto* pCallback = reinterpret_cast<PIMAGE_TLS_CALLBACK*>(pTLS->AddressOfCallBacks);
-			// 4/4 10:50, set up so we can call dll main
+			
 			for (; pCallback && *pCallback; ++pCallback)
 			{
 				(*pCallback)(pBase, DLL_PROCESS_ATTACH, nullptr);
@@ -272,7 +273,7 @@ void __stdcall shellcode(MANUAL_MAPPING_DATA* pData)
 		// call dll main
 		_DllMain(pBase, DLL_PROCESS_ATTACH, nullptr);
 
-		// Doublecheck something 4/4 11:45
+		
 		pData->hMod = reinterpret_cast<HINSTANCE>(pBase);
 	}
 	

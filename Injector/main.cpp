@@ -6,7 +6,7 @@
 #include "injection.h"
 
 // --------------------------Named pipes windows start-------------------------
-bool pipeTest = true;
+bool pipeTest = false;
 #define BUFSIZE 512
 DWORD WINAPI InstanceThread(LPVOID);
 VOID GetAnswerToRequest(LPTSTR, LPTSTR, LPDWORD);
@@ -16,29 +16,50 @@ HANDLE getThreadToken();
 HANDLE seDebugGetHandle(DWORD processID);
 DWORD getProcessID(const char* process);
 void retError(const char* str, DWORD err);
+HANDLE getHandle(DWORD processID);
 bool SetPrivilege(HANDLE hToken, LPCTSTR privilege, bool bEnablePrivilege);
 
-//const char szDllFile[] = "C:\\Users\\IEUser\\Desktop\\hashGrab.dll";
-//const char szProc[] = "lsass.exe";
-bool seDebug = false;
+bool seDebug = true;
 
-const char szDllFile[] = "C:\\Udvikling\\hashGrab\\hashGrab\\Debug\\hashGrab.dll";
+// Define process name
 const char szProc[] = "ac_client.exe";
+//const char szProc[] = "lsass.exe";
+
+// Define path to DLL
+//const char szDllFile[] = "C:\\Users\\IEUser\\Desktop\\hashGrab.dll";
+//const char szDllFile[] = "C:\\Users\\IEUser\\Desktop\\Dll_test.dll";
+const char szDllFile[] = "C:\\Users\\andandersen\\Desktop\\Dll_test.dll";
+
+
 
 int main()
 {
-	
 	std::thread pipeThread;
 	if (pipeTest)
 	{
-		//std::async(std::launch::async, startPipeServer); //waits here so it never get to dll injection. call this function async.
 		pipeThread = std::thread(startPipeServer);
 	}
-	/*
-	std::cout << "test" << std::endl;
+	
 	DWORD processID = getProcessID(szProc);
-	HANDLE hProc;
+	HANDLE hProc = getHandle(processID);
+	
+	if (!ManualMap(hProc, szDllFile))
+	{
+		CloseHandle(hProc);
+		printf("Error: ManualMap\n");
+	}
+	
+	CloseHandle(hProc);
+	pipeThread.join();
+	
+	system("PAUSE");
+	return 0;
 
+}
+
+HANDLE getHandle(DWORD processID)
+{
+	HANDLE hProc = NULL;
 	if (seDebug)
 	{
 		hProc = seDebugGetHandle(processID);
@@ -51,18 +72,7 @@ int main()
 			retError("OpenProcess", GetLastError());
 		}
 	}
-
-	if (!ManualMap(hProc, szDllFile))
-	{
-		CloseHandle(hProc);
-		printf("Error: ManualMap\n");
-	}
-
-	CloseHandle(hProc);*/
-	//pipeThread.join();
-	system("PAUSE");
-	return 0;
-
+	return hProc;
 }
 
 HANDLE seDebugGetHandle(DWORD processID)
@@ -93,6 +103,68 @@ HANDLE seDebugGetHandle(DWORD processID)
 	}
 	CloseHandle(hToken);
 	return hProc;
+}
+
+int startPipeServerTest()
+{
+	BOOL   fConnected = FALSE;
+	DWORD  dwThreadId = 0;
+	HANDLE hPipe = INVALID_HANDLE_VALUE, hThread = NULL;
+	const char* lpszPipename = "\\\\.\\pipe\\mynamedpipe";
+
+	while (true)
+	{
+		printf("Pipe Server : Main thread awaiting client connection on %s\n", lpszPipename);
+		hPipe = CreateNamedPipe(
+			lpszPipename,             // pipe name 
+			PIPE_ACCESS_DUPLEX,       // read/write access 
+			PIPE_TYPE_MESSAGE |       // message type pipe 
+			PIPE_READMODE_MESSAGE |   // message-read mode 
+			PIPE_WAIT,                // blocking mode 
+			PIPE_UNLIMITED_INSTANCES, // max. instances  
+			BUFSIZE,                  // output buffer size 
+			BUFSIZE,                  // input buffer size 
+			0,                        // client time-out 
+			NULL);                    // default security attribute 
+
+		if (hPipe == INVALID_HANDLE_VALUE)
+		{
+			printf("CreateNamedPipe failed, GLE=%d.\n", GetLastError());
+			return -1;
+		}
+
+		// Wait for the client to connect; if it succeeds, 
+		// the function returns a nonzero value. If the function
+		// returns zero, GetLastError returns ERROR_PIPE_CONNECTED. 
+
+		fConnected = ConnectNamedPipe(hPipe, NULL) ?
+			TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+
+		if (fConnected)
+		{
+			printf("Client connected, creating a processing thread.\n");
+
+			// Create a thread for this client. 
+			hThread = CreateThread(
+				NULL,              // no security attribute 
+				0,                 // default stack size 
+				InstanceThread,    // thread proc
+				(LPVOID)hPipe,    // thread parameter 
+				0,                 // not suspended 
+				&dwThreadId);      // returns thread ID 
+
+			if (hThread == NULL)
+			{
+				printf("CreateThread failed, GLE=%d.\n", GetLastError);
+				return -1;
+			}
+			else CloseHandle(hThread);
+		}
+		else
+			// The client could not connect, so close the pipe. 
+			CloseHandle(hPipe);
+	}
+	return 0;
 }
 
 int startPipeServer()
@@ -225,7 +297,7 @@ DWORD WINAPI InstanceThread(LPVOID lpvParam)
 		fSuccess = ReadFile(
 			hPipe,        // handle to pipe 
 			pchRequest,    // buffer to receive data 
-			BUFSIZE * sizeof(TCHAR), // size of buffer 
+			BUFSIZE * sizeof(WCHAR), // size of buffer 
 			&cbBytesRead, // number of bytes read 
 			NULL);        // not overlapped I/O 
 
@@ -299,13 +371,13 @@ void retError(const char* str, DWORD err)
 {
 	printf("Error: %s: 0x%X\n", str, err);
 	system("PAUSE");
-	exit(-1);
+	exit(EXIT_FAILURE);
 }
 
 DWORD getProcessID(const char* process)
 {
 	PROCESSENTRY32 PE32{ 0 };
-	PE32.dwSize = sizeof(PROCESSENTRY32); // 1/4 12:00 migth need to change this
+	PE32.dwSize = sizeof(PROCESSENTRY32); 
 
 	HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if (hSnap == INVALID_HANDLE_VALUE)
@@ -331,10 +403,9 @@ DWORD getProcessID(const char* process)
 
 HANDLE getThreadToken()
 {
-	HANDLE hToken;
+	HANDLE hToken = NULL;
 
-	// https://docs.microsoft.com/en-us/windows/desktop/secauthz/access-rights-for-access-token-objects
-	// retrieve thread token
+	// retrieve access token for thread
 	if (!OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, false, &hToken))
 	{
 		// If function failed because no token exists, create one
@@ -343,9 +414,8 @@ HANDLE getThreadToken()
 			if (!ImpersonateSelf(SecurityImpersonation))
 				retError("ImpersonateSelf", GetLastError());
 
-			if (!OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, FALSE, &hToken)) {
+			if (!OpenThreadToken(GetCurrentThread(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, FALSE, &hToken))
 				retError("OpenThreadToken2", GetLastError());
-			}
 		}
 		else
 			retError("OpenThreadToken1", GetLastError());
@@ -355,59 +425,26 @@ HANDLE getThreadToken()
 
 bool SetPrivilege(HANDLE hToken, LPCTSTR privilege, bool bEnablePrivilege)
 {
-	// https://support.microsoft.com/en-us/help/131065/how-to-obtain-a-handle-to-any-process-with-sedebugprivilege
-	TOKEN_PRIVILEGES tp;
+	TOKEN_PRIVILEGES tokenPrivilege;
 	LUID luid;
-	TOKEN_PRIVILEGES tpPrevious;
-	DWORD cbPrevious = sizeof(TOKEN_PRIVILEGES);
 
-	if (!LookupPrivilegeValue(NULL, privilege, &luid)) 
-		retError("SetPrivilege1", GetLastError());
+	// Locate the Locally Unique Identifier (LUID) That belongs 
+	// to SE_DEBUG on the local system, and store it in luid
+	if (!LookupPrivilegeValue(NULL, privilege, &luid))
+		retError("LookupPrivilegeValue", GetLastError());
 
-	// 
-	// first pass.  get current privilege setting
-	// 
-	tp.PrivilegeCount = 1;
-	tp.Privileges[0].Luid = luid;
-	tp.Privileges[0].Attributes = 0;
+	tokenPrivilege.PrivilegeCount = 1;
+	tokenPrivilege.Privileges[0].Luid = luid;
 
-	AdjustTokenPrivileges(
-		hToken,
-		FALSE,
-		&tp,
-		sizeof(TOKEN_PRIVILEGES),
-		&tpPrevious,
-		&cbPrevious
-	);
+	// Enable or disable
+	if (bEnablePrivilege)
+		tokenPrivilege.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+	else
+		tokenPrivilege.Privileges[0].Attributes = 0;
 
-	if (GetLastError() != ERROR_SUCCESS) 
-		retError("SetPrivilege2", GetLastError());
-
-	// 
-	// second pass.  set privilege based on previous setting
-	// 
-	tpPrevious.PrivilegeCount = 1;
-	tpPrevious.Privileges[0].Luid = luid;
-
-	if (bEnablePrivilege) {
-		tpPrevious.Privileges[0].Attributes |= (SE_PRIVILEGE_ENABLED);
-	}
-	else {
-		tpPrevious.Privileges[0].Attributes ^= (SE_PRIVILEGE_ENABLED &
-			tpPrevious.Privileges[0].Attributes);
-	}
-
-	AdjustTokenPrivileges(
-		hToken,
-		FALSE,
-		&tpPrevious,
-		cbPrevious,
-		NULL,
-		NULL
-	);
-
-	if (GetLastError() != ERROR_SUCCESS) 
-		retError("SetPrivilege3", GetLastError());
+	// Enable or disable privileges in specified access token.
+	if(!AdjustTokenPrivileges(hToken, FALSE, &tokenPrivilege, sizeof(TOKEN_PRIVILEGES), NULL, NULL))
+		retError("AdjustTokenPrivileges", GetLastError());
 
 	return TRUE;
 }
